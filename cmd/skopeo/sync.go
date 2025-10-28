@@ -683,7 +683,11 @@ func (opts *syncOptions) run(args []string, stdout io.Writer) (retErr error) {
 			switch ref.Transport() {
 			case docker.Transport:
 				// docker -> dir or docker -> docker
-				destSuffix = ref.DockerReference().String()
+				removeRegistry:= func(s string) string {
+					split := strings.Split(s, "/")
+					return strings.Join(split[1:], "/")
+				}
+				destSuffix = removeRegistry(ref.DockerReference().String())
 			case directory.Transport:
 				// dir -> docker (we don't allow `dir` -> `dir` sync operations)
 				destSuffix = strings.TrimPrefix(ref.StringWithinTransport(), srcRepo.DirBasePath)
