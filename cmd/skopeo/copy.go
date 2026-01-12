@@ -7,16 +7,16 @@ import (
 	"os"
 	"strings"
 
-	commonFlag "github.com/containers/common/pkg/flag"
-	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/copy"
-	"github.com/containers/image/v5/docker/reference"
-	"github.com/containers/image/v5/manifest"
-	"github.com/containers/image/v5/transports"
-	"github.com/containers/image/v5/transports/alltransports"
 	encconfig "github.com/containers/ocicrypt/config"
 	enchelpers "github.com/containers/ocicrypt/helpers"
 	"github.com/spf13/cobra"
+	commonFlag "go.podman.io/common/pkg/flag"
+	"go.podman.io/common/pkg/retry"
+	"go.podman.io/image/v5/copy"
+	"go.podman.io/image/v5/docker/reference"
+	"go.podman.io/image/v5/manifest"
+	"go.podman.io/image/v5/transports"
+	"go.podman.io/image/v5/transports/alltransports"
 )
 
 type copyOptions struct {
@@ -45,7 +45,8 @@ func copyCmd(global *globalOptions) *cobra.Command {
 	destFlags, destOpts := imageDestFlags(global, sharedOpts, deprecatedTLSVerifyOpt, "dest-", "dcreds")
 	retryFlags, retryOpts := retryFlags()
 	copyFlags, copyOpts := sharedCopyFlags()
-	opts := copyOptions{global: global,
+	opts := copyOptions{
+		global:              global,
 		deprecatedTLSVerify: deprecatedTLSVerifyOpt,
 		srcImage:            srcOpts,
 		destImage:           destOpts,
@@ -239,6 +240,7 @@ func (opts *copyOptions) run(args []string, stdout io.Writer) (retErr error) {
 	copyOpts.OciEncryptLayers = encLayers
 	copyOpts.OciEncryptConfig = encConfig
 	copyOpts.MaxParallelDownloads = opts.imageParallelCopies
+	copyOpts.ForceCompressionFormat = opts.destImage.forceCompressionFormat
 
 	return retry.IfNecessary(ctx, func() error {
 		manifestBytes, err := copy.Image(ctx, policyContext, destRef, srcRef, copyOpts)
@@ -250,7 +252,7 @@ func (opts *copyOptions) run(args []string, stdout io.Writer) (retErr error) {
 			if err != nil {
 				return err
 			}
-			if err = os.WriteFile(opts.digestFile, []byte(manifestDigest.String()), 0644); err != nil {
+			if err = os.WriteFile(opts.digestFile, []byte(manifestDigest.String()), 0o644); err != nil {
 				return fmt.Errorf("Failed to write digest to file %q: %w", opts.digestFile, err)
 			}
 		}

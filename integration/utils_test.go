@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/netip"
@@ -14,17 +15,37 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containers/image/v5/manifest"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/image/v5/manifest"
 )
 
-const skopeoBinary = "skopeo"
+// FIXME: Move to SetupSuite
+// https://github.com/containers/skopeo/pull/2703#discussion_r2331374730
+var skopeoBinary = func() string {
+	if binary := os.Getenv("SKOPEO_BINARY"); binary != "" {
+		return binary
+	}
+	return "skopeo"
+}()
 
-const testFQIN = "docker://quay.io/libpod/busybox" // tag left off on purpose, some tests need to add a special one
-const testFQIN64 = "docker://quay.io/libpod/busybox:amd64"
-const testFQINMultiLayer = "docker://quay.io/libpod/alpine_nginx:latest" // multi-layer
+// findFingerprint extracts the GPG key fingerprint from gpg --with-colons output.
+func findFingerprint(lineBytes []byte) (string, error) {
+	for line := range bytes.SplitSeq(lineBytes, []byte{'\n'}) {
+		fields := strings.Split(string(line), ":")
+		if len(fields) >= 10 && fields[0] == "fpr" {
+			return fields[9], nil
+		}
+	}
+	return "", errors.New("No fingerprint found")
+}
+
+const (
+	testFQIN           = "docker://quay.io/libpod/busybox" // tag left off on purpose, some tests need to add a special one
+	testFQIN64         = "docker://quay.io/libpod/busybox:amd64"
+	testFQINMultiLayer = "docker://quay.io/libpod/alpine_nginx:latest" // multi-layer
+)
 
 // consumeAndLogOutputStream takes (f, err) from an exec.*Pipe(), and causes all output to it to be logged to t.
 func consumeAndLogOutputStream(t *testing.T, id string, f io.ReadCloser, err error) {

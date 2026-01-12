@@ -14,17 +14,17 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/copy"
-	"github.com/containers/image/v5/directory"
-	"github.com/containers/image/v5/docker"
-	"github.com/containers/image/v5/docker/reference"
-	"github.com/containers/image/v5/manifest"
-	"github.com/containers/image/v5/transports"
-	"github.com/containers/image/v5/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.podman.io/common/pkg/retry"
+	"go.podman.io/image/v5/copy"
+	"go.podman.io/image/v5/directory"
+	"go.podman.io/image/v5/docker"
+	"go.podman.io/image/v5/docker/reference"
+	"go.podman.io/image/v5/manifest"
+	"go.podman.io/image/v5/transports"
+	"go.podman.io/image/v5/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -182,7 +182,7 @@ func destinationReference(destination string, transport string) (types.ImageRefe
 			return nil, fmt.Errorf("Destination directory could not be used: %w", err)
 		}
 		// the directory holding the image must be created here
-		if err = os.MkdirAll(destination, 0755); err != nil {
+		if err = os.MkdirAll(destination, 0o755); err != nil {
 			return nil, fmt.Errorf("Error creating directory for image %s: %w", destination, err)
 		}
 		imageTransport = directory.Transport
@@ -270,7 +270,6 @@ func imagesToCopyFromDir(dirPath string) ([]types.ImageReference, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return sourceReferences,
 			fmt.Errorf("Error walking the path %q: %w", dirPath, err)
@@ -289,8 +288,11 @@ func imagesToCopyFromRegistry(registryName string, cfg registrySyncConfig, sourc
 	// override ctx with per-registryName options
 	serverCtx.DockerCertPath = cfg.CertDir
 	serverCtx.DockerDaemonCertPath = cfg.CertDir
-	serverCtx.DockerDaemonInsecureSkipTLSVerify = (cfg.TLSVerify.skip == types.OptionalBoolTrue)
-	serverCtx.DockerInsecureSkipTLSVerify = cfg.TLSVerify.skip
+	// Only override TLS verification if explicitly specified in YAML; otherwise, keep CLI/global settings.
+	if cfg.TLSVerify.skip != types.OptionalBoolUndefined {
+		serverCtx.DockerDaemonInsecureSkipTLSVerify = (cfg.TLSVerify.skip == types.OptionalBoolTrue)
+		serverCtx.DockerInsecureSkipTLSVerify = cfg.TLSVerify.skip
+	}
 	if cfg.Credentials != (types.DockerAuthConfig{}) {
 		serverCtx.DockerAuthConfig = &cfg.Credentials
 	}
@@ -364,7 +366,8 @@ func imagesToCopyFromRegistry(registryName string, cfg registrySyncConfig, sourc
 		}
 		repoDescList = append(repoDescList, repoDescriptor{
 			ImageRefs: sourceReferences,
-			Context:   serverCtx})
+			Context:   serverCtx,
+		})
 	}
 
 	// include repository descriptors for cfg.ImagesByTagRegex
@@ -664,7 +667,7 @@ func (opts *syncOptions) run(args []string, stdout io.Writer) (retErr error) {
 
 	var digestFile *os.File
 	if opts.digestFile != "" && !opts.dryRun {
-		digestFile, err = os.OpenFile(opts.digestFile, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+		digestFile, err = os.OpenFile(opts.digestFile, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return fmt.Errorf("Error creating digest file: %w", err)
 		}

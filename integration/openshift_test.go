@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containers/storage/pkg/homedir"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/storage/pkg/homedir"
 )
 
 var adminKUBECONFIG = map[string]string{
@@ -207,7 +207,7 @@ func (cluster *openshiftCluster) startRegistry(t *testing.T) {
 	cluster.processes = append(cluster.processes, cluster.startRegistryProcess(t, 5006, schema2Config))
 }
 
-// ocLogin runs (oc login) and (oc new-project) on the cluster, or terminates on failure.
+// ocLoginToProject runs (oc login) and (oc new-project) on the cluster, or terminates on failure.
 func (cluster *openshiftCluster) ocLoginToProject(t *testing.T) {
 	t.Logf("oc login")
 	cmd := cluster.clusterCmd(nil, "oc", "login", "--certificate-authority=openshift.local.config/master/ca.crt", "-u", "myuser", "-p", "mypw", "https://localhost:8443")
@@ -223,7 +223,7 @@ func (cluster *openshiftCluster) ocLoginToProject(t *testing.T) {
 // We do not run (docker login) directly, because that requires a running daemon and a docker package.
 func (cluster *openshiftCluster) dockerLogin(t *testing.T) {
 	cluster.dockerDir = filepath.Join(homedir.Get(), ".docker")
-	err := os.MkdirAll(cluster.dockerDir, 0700)
+	err := os.MkdirAll(cluster.dockerDir, 0o700)
 	require.NoError(t, err)
 
 	out := combinedOutputOfCommand(t, "oc", "config", "view", "-o", "json", "-o", "jsonpath={.users[*].user.token}")
@@ -237,7 +237,7 @@ func (cluster *openshiftCluster) dockerLogin(t *testing.T) {
 			}`, port, authValue))
 	}
 	configJSON := `{"auths": {` + strings.Join(auths, ",") + `}}`
-	err = os.WriteFile(filepath.Join(cluster.dockerDir, "config.json"), []byte(configJSON), 0600)
+	err = os.WriteFile(filepath.Join(cluster.dockerDir, "config.json"), []byte(configJSON), 0o600)
 	require.NoError(t, err)
 }
 

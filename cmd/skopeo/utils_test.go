@@ -6,14 +6,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/containers/image/v5/copy"
-	"github.com/containers/image/v5/manifest"
-	"github.com/containers/image/v5/types"
 	imgspecv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/image/v5/copy"
+	"go.podman.io/image/v5/manifest"
+	"go.podman.io/image/v5/types"
 )
 
 func TestNoteCloseFailure(t *testing.T) {
@@ -49,7 +49,8 @@ func fakeGlobalOptions(t *testing.T, flags []string) (*globalOptions, *cobra.Com
 
 // fakeImageOptions creates imageOptions and sets it according to globalFlags/cmdFlags.
 func fakeImageOptions(t *testing.T, flagPrefix string, useDeprecatedTLSVerify bool,
-	globalFlags []string, cmdFlags []string) *imageOptions {
+	globalFlags []string, cmdFlags []string,
+) *imageOptions {
 	globalOpts, cmd := fakeGlobalOptions(t, globalFlags)
 	sharedFlags, sharedOpts := sharedImageFlags()
 	var deprecatedTLSVerifyFlag pflag.FlagSet
@@ -124,7 +125,8 @@ func TestImageOptionsNewSystemContext(t *testing.T) {
 
 // fakeImageDestOptions creates imageDestOptions and sets it according to globalFlags/cmdFlags.
 func fakeImageDestOptions(t *testing.T, flagPrefix string, useDeprecatedTLSVerify bool,
-	globalFlags []string, cmdFlags []string) *imageDestOptions {
+	globalFlags []string, cmdFlags []string,
+) *imageDestOptions {
 	globalOpts, cmd := fakeGlobalOptions(t, globalFlags)
 	sharedFlags, sharedOpts := sharedImageFlags()
 	var deprecatedTLSVerifyFlag pflag.FlagSet
@@ -366,77 +368,121 @@ func fakeSharedCopyOptions(t *testing.T, cmdFlags []string) *sharedCopyOptions {
 func TestSharedCopyOptionsCopyOptions(t *testing.T) {
 	someStdout := bytes.Buffer{}
 
-	// Default state
-	opts := fakeSharedCopyOptions(t, []string{})
-	res, cleanup, err := opts.copyOptions(&someStdout)
-	require.NoError(t, err)
-	defer cleanup()
-	assert.Equal(t, &copy.Options{
-		ReportWriter: &someStdout,
-	}, res)
-
-	// Set most flags to non-default values
-	// This should also test --sign-by-sigstore and --sign-by-sigstore-private-key; we would have
-	// to create test keys for that.
-	opts = fakeSharedCopyOptions(t, []string{
-		"--remove-signatures",
-		"--sign-by", "gpgFingerprint",
-		"--format", "oci",
-		"--preserve-digests",
-	})
-	res, cleanup, err = opts.copyOptions(&someStdout)
-	require.NoError(t, err)
-	defer cleanup()
-	assert.Equal(t, &copy.Options{
-		RemoveSignatures:      true,
-		SignBy:                "gpgFingerprint",
-		ReportWriter:          &someStdout,
-		PreserveDigests:       true,
-		ForceManifestMIMEType: imgspecv1.MediaTypeImageManifest,
-	}, res)
-
-	// --sign-passphrase-file + --sign-by work
 	passphraseFile, err := os.CreateTemp("", "passphrase") // Eventually we could refer to a passphrase fixture instead
 	require.NoError(t, err)
 	defer os.Remove(passphraseFile.Name())
 	_, err = passphraseFile.WriteString("test-passphrase")
 	require.NoError(t, err)
-	opts = fakeSharedCopyOptions(t, []string{
-		"--sign-by", "gpgFingerprint",
-		"--sign-passphrase-file", passphraseFile.Name(),
-	})
-	res, cleanup, err = opts.copyOptions(&someStdout)
-	require.NoError(t, err)
-	defer cleanup()
-	assert.Equal(t, &copy.Options{
-		SignBy:                           "gpgFingerprint",
-		SignPassphrase:                   "test-passphrase",
-		SignSigstorePrivateKeyPassphrase: []byte("test-passphrase"),
-		ReportWriter:                     &someStdout,
-	}, res)
-	// --sign-passphrase-file + --sign-by-sigstore-private-key should be tested here.
 
-	// Invalid --format
-	opts = fakeSharedCopyOptions(t, []string{"--format", "invalid"})
-	_, _, err = opts.copyOptions(&someStdout)
-	assert.Error(t, err)
+	type tc struct {
+		options        []string
+		expected       copy.Options
+		expectedSigner bool
+	}
+	c := []tc{
+		{ // Default state
+			options: []string{},
+			expected: copy.Options{
+				ReportWriter: &someStdout,
+			},
+		},
+		// Set most flags to non-default values
+		// This should also test --sign-by-sigstore and --sign-by-sigstore-private-key; we would have
+		// to create test keys for that.
+		// This does not test --sign-by-sq-fingerprint, because that needs to be conditional based on buildWithSequoia.
+		{
+			options: []string{
+				"--remove-signatures",
+				"--sign-by", "gpgFingerprint",
+				"--format", "oci",
+				"--preserve-digests",
+			},
+			expected: copy.Options{
+				RemoveSignatures:      true,
+				SignBy:                "gpgFingerprint",
+				ReportWriter:          &someStdout,
+				PreserveDigests:       true,
+				ForceManifestMIMEType: imgspecv1.MediaTypeImageManifest,
+			},
+		},
+		{ // --sign-passphrase-file + --sign-by work
+			options: []string{
+				"--sign-by", "gpgFingerprint",
+				"--sign-passphrase-file", passphraseFile.Name(),
+			},
+			expected: copy.Options{
+				SignBy:                           "gpgFingerprint",
+				SignPassphrase:                   "test-passphrase",
+				SignSigstorePrivateKeyPassphrase: []byte("test-passphrase"),
+				ReportWriter:                     &someStdout,
+			},
+		},
+		{ // --sign-passphrase-file + --sign-by-sigstore-private-key work
+			options: []string{
+				"--sign-by-sigstore-private-key", "/some/key/path.private",
+				"--sign-passphrase-file", passphraseFile.Name(),
+			},
+			expected: copy.Options{
+				SignPassphrase:                   "test-passphrase",
+				SignBySigstorePrivateKeyFile:     "/some/key/path.private",
+				SignSigstorePrivateKeyPassphrase: []byte("test-passphrase"),
+				ReportWriter:                     &someStdout,
+			},
+		},
+		{ // --sign-passphrase-file + --sign-by-sigstore-private-key work with an empty passphrase
+			options: []string{
+				"--sign-by-sigstore-private-key", "/some/key/path.private",
+				"--sign-passphrase-file", "./fixtures/empty.passphrase",
+			},
+			expected: copy.Options{
+				SignPassphrase:                   "",
+				SignBySigstorePrivateKeyFile:     "/some/key/path.private",
+				SignSigstorePrivateKeyPassphrase: []byte(""),
+				ReportWriter:                     &someStdout,
+			},
+		},
+	}
+	// If Sequoia is supported, --sign-passphrase-file + --sign-by-sq-fingerprint work
+	if buildWithSequoia {
+		c = append(c, tc{
+			options: []string{
+				"--sign-by-sq-fingerprint", "sqFingerprint",
+				"--sign-passphrase-file", passphraseFile.Name(),
+			},
+			expected: copy.Options{
+				SignPassphrase:                   "test-passphrase",
+				SignSigstorePrivateKeyPassphrase: []byte("test-passphrase"),
+				ReportWriter:                     &someStdout,
+			},
+			expectedSigner: true,
+		})
+	}
+	for _, c := range c {
+		opts := fakeSharedCopyOptions(t, c.options)
+		res, cleanup, err := opts.copyOptions(&someStdout)
+		require.NoError(t, err)
+		defer cleanup()
+		if c.expectedSigner {
+			assert.NotNil(t, res.Signers)
+			res.Signers = nil // To allow the comparison below
+		}
+		assert.Equal(t, &c.expected, res)
+	}
 
-	// More --sign-passphrase-file, --sign-by-sigstore-private-key, --sign-by-sigstore failure cases should be tested here.
-
-	// --sign-passphrase-file not found
-	opts = fakeSharedCopyOptions(t, []string{
-		"--sign-by", "gpgFingerprint",
-		"--sign-passphrase-file", "/dev/null/this/does/not/exist",
-	})
-	_, _, err = opts.copyOptions(&someStdout)
-	assert.Error(t, err)
-
-	// --sign-by-sigstore file not found
-	opts = fakeSharedCopyOptions(t, []string{
-		"--sign-by-sigstore", "/dev/null/this/does/not/exist",
-	})
-	_, _, err = opts.copyOptions(&someStdout)
-	assert.Error(t, err)
+	for _, opts := range [][]string{
+		{"--format", "invalid"}, // Invalid --format
+		// More --sign-by-sigstore-private-key, --sign-by-sigstore failure cases should be tested here.
+		// --sign-passphrase-file + more than one key option
+		{"--sign-by", "gpgFingerprint", "--sign-by-sq-fingerprint", "sqFingerprint", "--sign-passphrase-file", passphraseFile.Name()},
+		{"--sign-by", "gpgFingerprint", "--sign-by-sigstore-private-key", "sigstorePrivateKey", "--sign-passphrase-file", passphraseFile.Name()},
+		{"--sign-by-sq-fingerprint", "sqFingerprint", "--sign-by-sigstore-private-key", "sigstorePrivateKey", "--sign-passphrase-file", passphraseFile.Name()},
+		{"--sign-by", "gpgFingerprint", "--sign-passphrase-file", "/dev/null/this/does/not/exist"}, // --sign-passphrase-file not found
+		{"--sign-by-sigstore", "/dev/null/this/does/not/exist"},                                    // --sign-by-sigstore file not found
+	} {
+		opts := fakeSharedCopyOptions(t, opts)
+		_, _, err = opts.copyOptions(&someStdout)
+		assert.Error(t, err)
+	}
 }
 
 func TestParseManifestFormat(t *testing.T) {
@@ -445,21 +491,31 @@ func TestParseManifestFormat(t *testing.T) {
 		expectedManifestType string
 		expectErr            bool
 	}{
-		{"oci",
+		{
+			"oci",
 			imgspecv1.MediaTypeImageManifest,
-			false},
-		{"v2s1",
+			false,
+		},
+		{
+			"v2s1",
 			manifest.DockerV2Schema1SignedMediaType,
-			false},
-		{"v2s2",
+			false,
+		},
+		{
+			"v2s2",
 			manifest.DockerV2Schema2MediaType,
-			false},
-		{"",
+			false,
+		},
+		{
 			"",
-			true},
-		{"badValue",
 			"",
-			true},
+			true,
+		},
+		{
+			"badValue",
+			"",
+			true,
+		},
 	} {
 		manifestType, err := parseManifestFormat(testCase.formatParam)
 		if testCase.expectErr {
@@ -480,28 +536,37 @@ func TestImageOptionsAuthfileOverride(t *testing.T) {
 		expectedAuthfilePath string
 	}{
 		// if there is no prefix, only authfile is allowed.
-		{"",
+		{
+			"",
 			[]string{
 				"--authfile", "/srv/authfile",
-			}, "/srv/authfile"},
+			},
+			"/srv/authfile",
+		},
 		// if authfile and dest-authfile is provided, dest-authfile wins
-		{"dest-",
+		{
+			"dest-",
 			[]string{
 				"--authfile", "/srv/authfile",
 				"--dest-authfile", "/srv/dest-authfile",
-			}, "/srv/dest-authfile",
+			},
+			"/srv/dest-authfile",
 		},
 		// if only the shared authfile is provided, authfile must be present in system context
-		{"dest-",
+		{
+			"dest-",
 			[]string{
 				"--authfile", "/srv/authfile",
-			}, "/srv/authfile",
+			},
+			"/srv/authfile",
 		},
 		// if only the dest authfile is provided, dest-authfile must be present in system context
-		{"dest-",
+		{
+			"dest-",
 			[]string{
 				"--dest-authfile", "/srv/dest-authfile",
-			}, "/srv/dest-authfile",
+			},
+			"/srv/dest-authfile",
 		},
 	} {
 		opts := fakeImageOptions(t, testCase.flagPrefix, false, []string{}, testCase.cmdFlags)

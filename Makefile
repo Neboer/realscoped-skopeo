@@ -24,10 +24,12 @@ GOBIN := $(shell $(GO) env GOBIN)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+SEQUOIA_SONAME_DIR =
+
 # N/B: This value is managed by Renovate, manual changes are
 # possible, as long as they don't disturb the formatting
 # (i.e. DO NOT ADD A 'v' prefix!)
-GOLANGCI_LINT_VERSION := 2.3.0
+GOLANGCI_LINT_VERSION := 2.8.0
 
 ifeq ($(GOBIN),)
 GOBIN := $(GOPATH)/bin
@@ -81,10 +83,8 @@ endif
 CONTAINER_GOSRC = /src/github.com/containers/skopeo
 CONTAINER_RUN ?= $(CONTAINER_CMD) --security-opt label=disable -v $(CURDIR):$(CONTAINER_GOSRC) -w $(CONTAINER_GOSRC) $(SKOPEO_CIDEV_CONTAINER_FQIN)
 
-GIT_COMMIT := $(shell GIT_CEILING_DIRECTORIES=$$(cd ..; pwd) git rev-parse HEAD 2> /dev/null || true)
-
 EXTRA_LDFLAGS ?=
-SKOPEO_LDFLAGS := -ldflags '-X main.gitCommit=${GIT_COMMIT} $(EXTRA_LDFLAGS)'
+SKOPEO_LDFLAGS := -ldflags '-X go.podman.io/image/v5/signature/internal/sequoia.sequoiaLibraryDir=$(SEQUOIA_SONAME_DIR) $(EXTRA_LDFLAGS)'
 
 MANPAGES_MD = $(wildcard docs/*.md)
 MANPAGES ?= $(MANPAGES_MD:%.md=%)
@@ -201,10 +201,19 @@ test-integration:
 		$(MAKE) test-integration-local
 
 
-# Intended for CI, assumed to be running in quay.io/libpod/skopeo_cidev container.
-test-integration-local: bin/skopeo
+# Helper target to set up SKOPEO_BINARY variable for local test targets
+# SKOPEO_BINARY only takes effect on `test-integration-local` and
+# `test-system-local` targets. It's not propagated into the container used for `test-integration` and
+# `test-system`. These targets will (build and) use skopeo binary at
+# ./bin/skopeo.
+.eval-skopeo-binary: $(if $(SKOPEO_BINARY),,bin/skopeo)
+	$(eval SKOPEO_BINARY := $(or $(SKOPEO_BINARY),./bin/skopeo))
+	@echo "Testing with $(SKOPEO_BINARY) ..."
+
+# Primarily intended for CI.
+test-integration-local: .eval-skopeo-binary
 	hack/warn-destructive-tests.sh
-	hack/test-integration.sh $(SKOPEO_LDFLAGS) $(TESTFLAGS)
+	cd ./integration && SKOPEO_BINARY="$(abspath $(SKOPEO_BINARY))" $(GO) test $(SKOPEO_LDFLAGS) $(TESTFLAGS) $(if $(BUILDTAGS),-tags "$(BUILDTAGS)")
 
 # complicated set of options needed to run podman-in-podman
 test-system:
@@ -218,10 +227,10 @@ test-system:
 	$(CONTAINER_RUNTIME) unshare rm -rf $$DTEMP; # This probably doesn't work with Docker, oh well, better than nothing... \
 	exit $$rc
 
-# Intended for CI, assumed to already be running in quay.io/libpod/skopeo_cidev container.
-test-system-local: bin/skopeo
+# Primarily intended for CI.
+test-system-local: .eval-skopeo-binary
 	hack/warn-destructive-tests.sh
-	hack/test-system.sh SKOPEO_LDFLAGS="$(SKOPEO_LDFLAGS)" BUILDTAGS="$(BUILDTAGS)"
+	hack/test-system.sh
 
 test-unit:
 	# Just call (make test unit-local) here instead of worrying about environment differences
@@ -233,10 +242,13 @@ validate:
 # This target is only intended for development, e.g. executing it from an IDE. Use (make test) for CI or pre-release testing.
 test-all-local: validate-local validate-docs test-unit-local
 
+.PHONY: fmt
+fmt: tools
+	$(GOBIN)/golangci-lint fmt
+
 .PHONY: validate-local
-validate-local:
+validate-local: tools
 	hack/validate-git-marks.sh
-	hack/validate-gofmt.sh
 	$(GOBIN)/golangci-lint run --build-tags "${BUILDTAGS}"
 	# An extra run with --tests=false allows detecting code unused outside of tests;
 	# ideally the linter should be able to find this automatically.
@@ -251,7 +263,7 @@ validate-docs: bin/skopeo
 	hack/xref-helpmsgs-manpages
 
 test-unit-local:
-	$(GO) test -tags "$(BUILDTAGS)" $$($(GO) list -tags "$(BUILDTAGS)" -e ./... | grep -v '^github\.com/containers/skopeo/\(integration\|vendor/.*\)$$')
+	$(GO) test $(SKOPEO_LDFLAGS) -tags "$(BUILDTAGS)" $$($(GO) list -tags "$(BUILDTAGS)" -e ./... | grep -v '^github\.com/containers/skopeo/\(integration\|vendor/.*\)$$')
 
 vendor:
 	$(GO) mod tidy
@@ -260,8 +272,3 @@ vendor:
 
 vendor-in-container:
 	podman run --privileged --rm --env HOME=/root -v $(CURDIR):/src -w /src golang $(MAKE) vendor
-
-# CAUTION: This is not a replacement for RPMs provided by your distro.
-# Only intended to build and test the latest unreleased changes.
-rpm:
-	rpkg local

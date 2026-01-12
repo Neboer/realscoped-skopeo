@@ -107,9 +107,14 @@ See containers-sigstore-signing-params.yaml(5) for details about the file format
 
 Add a sigstore signature using a private key at _path_ for an image name corresponding to _destination-image_
 
+**--sign-by-sq-fingerprint** _fingerprint_
+
+Add a “simple signing” signature using a Sequoia-PGP key with the specified _fingerprint_.
+
 **--sign-passphrase-file** _path_
 
-The passphare to use when signing with `--sign-by` or `--sign-by-sigstore-private-key`. Only the first line will be read. A passphrase stored in a file is of questionable security if other users can read this file. Do not use this option if at all avoidable.
+The passphrase to use when signing with `--sign-by`, `--sign-by-sigstore-private-key` or `--sign-by-sq-fingerprint`.
+Only the first line will be read. A passphrase stored in a file is of questionable security if other users can read this file. Do not use this option if at all avoidable.
 
 **--sign-identity** _reference_
 
@@ -191,6 +196,10 @@ and will be treated as `zstd` with a warning in that case.
 
 Specifies the compression level to use.  The value is specific to the compression algorithm used, e.g. for zstd the accepted values are in the range 1-20 (inclusive), while for gzip it is 1-9 (inclusive).
 
+**--dest-force-compress-format**
+
+Ensures that the compression algorithm set in --dest-compress-format is used exclusively.
+
 **--src-registry-token** _token_
 
 Bearer token for accessing the source registry.
@@ -205,7 +214,7 @@ Precompute digests to ensure layers are not uploaded that already exist on the d
 
 **--retry-times**
 
-The number of times to retry.
+The number of times to retry. By default, no retries are attempted.
 
 **--retry-delay**
 

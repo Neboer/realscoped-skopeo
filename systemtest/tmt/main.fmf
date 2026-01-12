@@ -1,6 +1,3 @@
-require:
-    - skopeo-tests
-
 environment:
     SKOPEO_BINARY: /usr/bin/skopeo
 
@@ -10,5 +7,13 @@ adjust:
         RELEASE_TESTING: true
 
 summary: System test
-test: bash ./test.sh
+test: |
+    rpm -q containers-common skopeo-tests
+    # If these tests are to be run anywhere else, TMT can fetch
+    # them using the URL and git ref, so git commands should work.
+    make -C $(git rev-parse --show-toplevel) test-system-local
+require:
+    - git-core
+    - make
+    - skopeo-tests
 duration: 60m

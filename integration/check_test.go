@@ -26,8 +26,10 @@ type skopeoSuite struct {
 	regV2WithAuth *testRegistryV2
 }
 
-var _ = suite.SetupAllSuite(&skopeoSuite{})
-var _ = suite.TearDownAllSuite(&skopeoSuite{})
+var (
+	_ = suite.SetupAllSuite(&skopeoSuite{})
+	_ = suite.TearDownAllSuite(&skopeoSuite{})
+)
 
 func (s *skopeoSuite) SetupSuite() {
 	t := s.T()
@@ -50,7 +52,7 @@ func (s *skopeoSuite) TearDownSuite() {
 
 func (s *skopeoSuite) TestVersion() {
 	t := s.T()
-	assertSkopeoSucceeds(t, fmt.Sprintf(".*%s version %s.*", skopeoBinary, version.Version),
+	assertSkopeoSucceeds(t, fmt.Sprintf(".*skopeo version %s.*", version.Version),
 		"--version")
 }
 
